@@ -3,9 +3,11 @@ function Check-Service
     Param(
         [string]$serviceName,
         [switch]$InformMe,
-        [Parameter(ParameterSetName="MailEnabled")]$to,
-        [Parameter(ParameterSetName="MailEnabled")]$from,
-        [Parameter(ParameterSetName="MailEnabled")]$SmtpServer
+        [Parameter(ParameterSetName="MailEnabled")][string]$to,
+        [Parameter(ParameterSetName="MailEnabled")][string]$from,
+        [Parameter(ParameterSetName="MailEnabled")][string]$SmtpServer,
+        [Parameter(ParameterSetName="MailEnabled")][System.ServiceModel.Description.ClientCredentials]$cred
+        
         )
         $ScriptStartDate=Date
         $ReturnThis=New-Object psobject -Property @{Error="0";Value="0"}
@@ -13,19 +15,20 @@ function Check-Service
         $service=Get-Service -Name $serviceName
         if ($service.Status -ne "Running")
         {
-            $Result=.\start-ControlledService.ps1
-        }
+            $Result=start-ControlledService.ps1
+      
         
-    if ($InformMe)
-    {
-        $events=get-eventlog Application -after $ScriptStartDate.AddMinutes(-5) -before $ScriptStartDate.AddMinutes(1) -EntryType Error,Warning
-        $TipMessage=$events | fl TimeGenerated,Message
+            if ($InformMe)
+            {
+                $events=get-eventlog Application -after $ScriptStartDate.AddMinutes(-5) -before $ScriptStartDate.AddMinutes(1) -EntryType Error,Warning
+                $TipMessage=$events | format-list TimeGenerated,Message
         
-        Send-MailMessage -to $to -Body $TipMessage -from $from -SmtpServer $SmtpServer -Subject "$serviceName service is stopped on $(Hostname)"
-
-}
-        
-        $ReturnThis.Value=$ScriptStartDate
+                Send-MailMessage -to $to -Body $TipMessage -from $from -SmtpServer $SmtpServer -Subject "$serviceName service is stopped on $(Hostname)" -Credential $cred
+                $ReturnThis.Value="ServiceRestartedEmailSent"
+            }       
+            $ReturnThis.Value="ServiceRestarted"
+        }  
+        $ReturnThis.Value="ServiceOK"
         $ReturnThis.Error=$Result.Value
         
         $ReturnThis
@@ -53,12 +56,12 @@ function Start-ControlledService
 
     $ReturnThis=New-Object psobject -Property @{Error="0";Value="0"}
     
-    $RegValue=.\Get-RegistryKey.ps1 -RegProperty Ongoing -RegPath HKLM:\SOFTWARE\ -RegKey TSE
+    $RegValue=Get-RegistryKey.ps1 -RegProperty Ongoing -RegPath HKLM:\SOFTWARE\ -RegKey TSE
         if ($RegValue.Value -eq "0")
         {
-            .\Set-RegistryKey.ps1 -RegPath HKLM:\SOFTWARE\ -RegKey TSE -RegProperty OnGoing -RegValue 1
+            Set-RegistryKey.ps1 -RegPath HKLM:\SOFTWARE\ -RegKey TSE -RegProperty OnGoing -RegValue 1
             Start-Service $service.DisplayName
-            .\Set-RegistryKey.ps1 -RegPath HKLM:\SOFTWARE\ -RegKey TSE -RegProperty OnGoing -RegValue 0
+            Set-RegistryKey.ps1 -RegPath HKLM:\SOFTWARE\ -RegKey TSE -RegProperty OnGoing -RegValue 0
             if ($service.Status -ne "Running")
             {
                $ReturnThis.Value="FailedToStart"
@@ -84,14 +87,14 @@ function Get-RegistryKey
     
     if (!$(Test-Path -path $RegPath\$RegKey))
     {
-       .\Write-RegistryKey.ps1 -RegProperty $RegProperty -RegPath $RegPath -RegValue "0"
+       Write-RegistryKey.ps1 -RegProperty $RegProperty -RegPath $RegPath -RegValue "0"
     }
     
     $ReturnThis.Value=(Get-ItemProperty -Path $RegPath\$RegKey\).$RegProperty
     
     if ($Null -eq $ReturnThis.Value)
     {
-        .\Write-RegistryKey.ps1 -RegProperty $RegProperty -RegPath $RegPath -RegValue "0"
+        Write-RegistryKey.ps1 -RegProperty $RegProperty -RegPath $RegPath -RegValue "0"
         $ReturnThis.Value="0"
     }
     
